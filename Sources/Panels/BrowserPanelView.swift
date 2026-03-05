@@ -774,6 +774,7 @@ struct BrowserPanelView: View {
                     isPanelFocused: isFocused,
                     portalZPriority: portalPriority
                 )
+                .accessibilityIdentifier("BrowserWebViewSurface")
                 // Keep the host stable for normal pane churn, but force a remount when
                 // BrowserPanel replaces its underlying WKWebView after process termination.
                 .id(panel.webViewInstanceID)
