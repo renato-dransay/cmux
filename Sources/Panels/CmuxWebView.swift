@@ -93,7 +93,7 @@ final class CmuxWebView: WKWebView {
 
     /// Temporarily permits focus acquisition for explicit pointer-driven interactions
     /// (mouse click into this webview) while keeping background autofocus blocked.
-    func withPointerFocusAllowance(_ body: () -> Void) {
+    func withPointerFocusAllowance<T>(_ body: () -> T) -> T {
         pointerFocusAllowanceDepth += 1
 #if DEBUG
         dlog(
@@ -110,7 +110,7 @@ final class CmuxWebView: WKWebView {
             )
 #endif
         }
-        body()
+        return body()
     }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
@@ -1113,11 +1113,31 @@ final class CmuxWebView: WKWebView {
         NSPasteboard.PasteboardType("com.cmux.sidebar-tab-reorder"),
     ]
 
+    static func shouldRejectInternalPaneDrag(_ pasteboardTypes: [NSPasteboard.PasteboardType]?) -> Bool {
+        DragOverlayRoutingPolicy.hasBonsplitTabTransfer(pasteboardTypes)
+            || DragOverlayRoutingPolicy.hasSidebarTabReorder(pasteboardTypes)
+    }
+
     override func registerForDraggedTypes(_ newTypes: [NSPasteboard.PasteboardType]) {
         let filtered = newTypes.filter { !Self.blockedDragTypes.contains($0) }
         if !filtered.isEmpty {
             super.registerForDraggedTypes(filtered)
         }
+    }
+
+    override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation {
+        guard !Self.shouldRejectInternalPaneDrag(sender.draggingPasteboard.types) else { return [] }
+        return super.draggingEntered(sender)
+    }
+
+    override func draggingUpdated(_ sender: any NSDraggingInfo) -> NSDragOperation {
+        guard !Self.shouldRejectInternalPaneDrag(sender.draggingPasteboard.types) else { return [] }
+        return super.draggingUpdated(sender)
+    }
+
+    override func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
+        guard !Self.shouldRejectInternalPaneDrag(sender.draggingPasteboard.types) else { return false }
+        return super.performDragOperation(sender)
     }
 
     override func willOpenMenu(_ menu: NSMenu, with event: NSEvent) {

@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import MarkdownUI
 
@@ -30,9 +31,12 @@ struct MarkdownPanelView: View {
                 .padding(FocusFlashPattern.ringInset)
                 .allowsHitTesting(false)
         }
-        .contentShape(Rectangle())
-        .onTapGesture {
-            onRequestPanelFocus()
+        .overlay {
+            if isVisibleInUI {
+                // Observe left-clicks without intercepting them so markdown text
+                // selection and link activation continue to use the native path.
+                MarkdownPointerObserver(onPointerDown: onRequestPanelFocus)
+            }
         }
         .onChange(of: panel.focusFlashToken) { _ in
             triggerFocusFlashAnimation()
@@ -82,15 +86,17 @@ struct MarkdownPanelView: View {
             Image(systemName: "doc.questionmark")
                 .font(.system(size: 40))
                 .foregroundColor(.secondary)
-            Text("File unavailable")
+            Text(String(localized: "markdown.fileUnavailable.title", defaultValue: "File unavailable"))
                 .font(.headline)
                 .foregroundColor(.primary)
             Text(panel.filePath)
                 .font(.system(size: 12, design: .monospaced))
                 .foregroundColor(.secondary)
-                .lineLimit(2)
                 .multilineTextAlignment(.center)
-            Text("The file may have been moved or deleted.")
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 24)
+            Text(String(localized: "markdown.fileUnavailable.message", defaultValue: "The file may have been moved or deleted."))
                 .font(.caption)
                 .foregroundColor(.secondary)
         }
@@ -280,6 +286,70 @@ struct MarkdownPanelView: View {
             return .easeIn(duration: duration)
         case .easeOut:
             return .easeOut(duration: duration)
+        }
+    }
+}
+
+private struct MarkdownPointerObserver: NSViewRepresentable {
+    let onPointerDown: () -> Void
+
+    func makeNSView(context: Context) -> MarkdownPanelPointerObserverView {
+        let view = MarkdownPanelPointerObserverView()
+        view.onPointerDown = onPointerDown
+        return view
+    }
+
+    func updateNSView(_ nsView: MarkdownPanelPointerObserverView, context: Context) {
+        nsView.onPointerDown = onPointerDown
+    }
+}
+
+final class MarkdownPanelPointerObserverView: NSView {
+    var onPointerDown: (() -> Void)?
+    private var eventMonitor: Any?
+
+    override var mouseDownCanMoveWindow: Bool { false }
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        installEventMonitorIfNeeded()
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    deinit {
+        if let eventMonitor {
+            NSEvent.removeMonitor(eventMonitor)
+        }
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        nil
+    }
+
+    func shouldHandle(_ event: NSEvent) -> Bool {
+        guard event.type == .leftMouseDown,
+              let window,
+              event.window === window,
+              !isHiddenOrHasHiddenAncestor else { return false }
+        let point = convert(event.locationInWindow, from: nil)
+        return bounds.contains(point)
+    }
+
+    func handleEventIfNeeded(_ event: NSEvent) -> NSEvent {
+        guard shouldHandle(event) else { return event }
+        DispatchQueue.main.async { [weak self] in
+            self?.onPointerDown?()
+        }
+        return event
+    }
+
+    private func installEventMonitorIfNeeded() {
+        guard eventMonitor == nil else { return }
+        eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown]) { [weak self] event in
+            self?.handleEventIfNeeded(event) ?? event
         }
     }
 }
